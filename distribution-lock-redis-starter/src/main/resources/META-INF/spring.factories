@@ -1,0 +1,2 @@
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+yzf.project.distributionlock.redis.autoconfigure.RedisConfiguration
