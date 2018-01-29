@@ -1,5 +1,6 @@
 package yzf.project
 
+import org.assertj.core.util.Strings
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.springframework.beans.factory.annotation.Autowired
@@ -25,8 +26,8 @@ class LockTests {
         val key = "distribution-lock-test"
         val countDownLatch = CountDownLatch(2)
 
-        val task1 = LockTask(key, 2000L, 0L, redisLock, countDownLatch)
-        val task2 = LockTask(key, 2000L, 2500L, redisLock, countDownLatch)
+        val task1 = LockTask(key, "", 2000L, 0L, redisLock, countDownLatch)
+        val task2 = LockTask(key, "", 2000L, 2500L, redisLock, countDownLatch)
 
         task1.start()
         task2.start()
@@ -39,8 +40,8 @@ class LockTests {
         val key = "distribution-lock-test"
         val countDownLatch = CountDownLatch(2)
 
-        val task1 = LockTask(key, 2000L, 0L, redisLock, countDownLatch)
-        val task2 = LockTask(key, 2000L, 1000L, redisLock, countDownLatch)
+        val task1 = LockTask(key, "", 2000L, 0L, redisLock, countDownLatch)
+        val task2 = LockTask(key, "", 2000L, 1000L, redisLock, countDownLatch)
 
         task1.start()
         task2.start()
@@ -76,6 +77,51 @@ class LockTests {
         countDownLatch.await()
     }
 
+    @Test
+    fun testUnlock() {
+        val key = "distribution-lock-test"
+        val value = redisLock.getRandomValue()
+        val countDownLatch = CountDownLatch(2)
+
+        val lockTask = LockTask(key, value, 2000L, 0L, redisLock, countDownLatch)
+        val unlockTask = UnlockTask(key, value, redisLock, countDownLatch)
+
+        lockTask.start()
+        unlockTask.start()
+
+        countDownLatch.await()
+    }
+
+    @Test
+    fun testUnlock1() {
+        val key = "distribution-lock-test"
+        val expectValue = redisLock.getRandomValue()
+        val notExpectValue = redisLock.getRandomValue()
+        val countDownLatch = CountDownLatch(2)
+
+        val lockTask = LockTask(key, expectValue, 2000L, 0L, redisLock, countDownLatch)
+        val unlockTask = UnlockTask(key, notExpectValue, redisLock, countDownLatch)
+
+        lockTask.start()
+        unlockTask.start()
+
+        countDownLatch.await()
+    }
+
+    class UnlockTask (
+            private var key: String,
+            private var value: String,
+            private var redisLock: RedisLock,
+            private var countDownLatch: CountDownLatch
+    ) : Thread() {
+
+        override fun run() {
+            val res = redisLock.unlock(key, value)
+            System.out.println("thread name:" + Thread.currentThread().name + " unlock res is:" + res)
+            countDownLatch.countDown()
+        }
+    }
+
     class TryLockTask (
             private var key: String,
             private var retryTime: Long,
@@ -89,7 +135,7 @@ class LockTests {
             val value = redisLock.getRandomValue()
             val res = redisLock.tryLock(key, value, expireMills = timeout, retryMills = retryTime)
             System.out.println("thread name:" + Thread.currentThread().name + " try lock res is:" + res +
-            " time escape ms:" + (System.currentTimeMillis() - startMs))
+                    " time escape ms:" + (System.currentTimeMillis() - startMs))
 
             countDownLatch.countDown()
         }
@@ -97,6 +143,7 @@ class LockTests {
 
     class LockTask (
             private var key: String,
+            private var value: String,
             private var timeout: Long,
             private var delay: Long,
             private var redisLock: RedisLock,
@@ -107,7 +154,9 @@ class LockTests {
             if (delay != 0L) {
                 Thread.sleep(delay)
             }
-            val value = redisLock.getRandomValue()
+            if (Strings.isNullOrEmpty(value)) {
+                value = redisLock.getRandomValue()
+            }
             val res = redisLock.lock(key, value, timeout)
             System.out.println("thread name:" + Thread.currentThread().name + " lock result:" + res.toString())
             countDownLatch.countDown()
